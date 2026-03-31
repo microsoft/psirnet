@@ -36,7 +36,7 @@ checkpoint:
 # Logger
 logger:
   project: PSIRNet
-  entity: t-aatalik
+  entity: # Enter your wandb entity
   name: psirnet-large
   save_dir: wandb_logs
 
