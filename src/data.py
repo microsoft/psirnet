@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 @dataclass
-class VarNetSample:
+class PSIRNetSample:
     ir_kspace: torch.Tensor
     pd_kspace: torch.Tensor
     mask: torch.Tensor
@@ -105,7 +105,7 @@ def read_buffer(buffer_id) -> np.ndarray:
             raise
 
 
-def process_single_item(item_metadata) -> VarNetSample:
+def process_single_item(item_metadata) -> PSIRNetSample:
     """Process a single item - used for parallel execution"""
     buffer_id = item_metadata['buffer_id']
     transform = item_metadata['transform']
@@ -119,13 +119,13 @@ def process_single_item(item_metadata) -> VarNetSample:
         mask, min_target, max_target) = transform(
          ir_kspace, pd_kspace, sens_maps, target
     )
-    return VarNetSample(
+    return PSIRNetSample(
         ir_kspace, pd_kspace, mask, sens_maps,
         target, min_target, max_target
     )
 
 
-def parallel_collate_fn(batch: List[dict]) -> VarNetSample:
+def parallel_collate_fn(batch: List[dict]) -> PSIRNetSample:
     """
     Collate function that reads all buffers in parallel
     """
@@ -140,7 +140,7 @@ def parallel_collate_fn(batch: List[dict]) -> VarNetSample:
     target = torch.stack([s.target for s in samples])
     mins = torch.stack([s.min_target for s in samples])
     maxs = torch.stack([s.max_target for s in samples])
-    return VarNetSample(
+    return PSIRNetSample(
         ir_kspace, pd_kspace, mask, 
         sens_maps, target, mins, maxs
     )
