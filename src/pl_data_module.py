@@ -1,6 +1,6 @@
 import lightning as L
 from torch.utils.data import DataLoader
-from .data import SliceDataset, PSIRNetDataTransform, parallel_collate_fn
+from .data import SliceDataset, PSIRNetDataTransform, collate_fn
 
 
 class PSIRNetDataModule(L.LightningDataModule):
