@@ -1,12 +1,10 @@
 import torch
 import os
-import subprocess
 import pandas as pd
 import numpy as np
 from typing import Union, Callable, List
 from pathlib import Path
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor
 
 
 @dataclass
@@ -35,19 +33,22 @@ class SliceDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.csv)
 
-    def __getitem__(self, idx: int) -> dict:
-        """Return only the metadata needed for loading"""
+    def __getitem__(self, idx: int) -> PSIRNetSample:
+        """Return NumPy arrays"""
         row = self.csv.iloc[idx]
-        return {
-            'buffer_id': row['buffer'],
-            'transform': self.transform,
-            'idx': idx
-        }
+        with np.load(row['npz_path'], mmap_mode='r') as npz:
+            ir_kspace = npz['ir_kspace']
+            pd_kspace = npz['pd_kspace']
+            sens_maps = npz['sens_maps']
+            target = npz['moco_psir']
+        return self.transform(
+            ir_kspace, pd_kspace, sens_maps, target
+        )
 
 
 class PSIRNetDataTransform:
     """
-    A callable class to convert numpy arrays to torch tensors
+    A callable class to convert NumPy arrays to Torch tensors
     """     
     def __call__(
         self,
@@ -55,11 +56,7 @@ class PSIRNetDataTransform:
         pd_kspace: np.ndarray,
         sens_maps: np.ndarray,
         target: np.ndarray,
-    ) -> tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor,
-        torch.Tensor, torch.Tensor, 
-        torch.Tensor, torch.Tensor
-    ]:
+    ) -> PSIRNetSample:
         ir_kspace = torch.tensor(ir_kspace)
         pd_kspace = torch.tensor(pd_kspace)
         sens_maps = torch.tensor(sens_maps)
@@ -72,74 +69,24 @@ class PSIRNetDataTransform:
         # Extract the sampling mask with no further subsampling
         # Note that all coils and sets have the same mask
         mask = (ir_kspace != 0)[0:1, ...]
-        return (
+        return PSIRNetSample(
             ir_kspace, pd_kspace, sens_maps, target,
             mask, min_target, max_target
-        )  # type: ignore
+        )
 
 
-def read_buffer(buffer_id) -> np.ndarray:
+def collate_fn(batch: List[PSIRNetSample]) -> PSIRNetSample:
     """
-    Function to read a buffer in single pass
-    Args:
-        buffer_id (str): The ID of the buffer to read.
-    Returns:
-        np.ndarray: IR & PD k-space, sens_maps and the target.
+    Collate function for dataloader to batch PSIRNetSamples
     """
-    with subprocess.Popen(
-        [f"tyger buffer read {buffer_id}"],
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL
-    ) as proc:
-        try:
-            data = np.frombuffer(
-                proc.stdout.read(), dtype=np.complex64
-            ).reshape(91, 256, 192)  # 30 coils x 3 + 1
-            proc.wait()
-            if proc.returncode != 0:
-                raise ValueError(f"Error in {buffer_id}")
-            return data
-        except Exception:
-            proc.kill()
-            raise
-
-
-def process_single_item(item_metadata) -> PSIRNetSample:
-    """Process a single item - used for parallel execution"""
-    buffer_id = item_metadata['buffer_id']
-    transform = item_metadata['transform']
-
-    data = read_buffer(buffer_id)
-    ir_kspace = data[:30, ...]
-    pd_kspace = data[30:60, ...]
-    sens_maps = data[60:90, ...]
-    target = data[90:91, ...].real
-    (ir_kspace, pd_kspace, sens_maps, target,
-        mask, min_target, max_target) = transform(
-         ir_kspace, pd_kspace, sens_maps, target
-    )
-    return PSIRNetSample(
-        ir_kspace, pd_kspace, mask, sens_maps,
-        target, min_target, max_target
-    )
-
-
-def parallel_collate_fn(batch: List[dict]) -> PSIRNetSample:
-    """
-    Collate function that reads all buffers in parallel
-    """
-    with ThreadPoolExecutor(max_workers=len(batch)) as executor:
-        samples = list(executor.map(process_single_item, batch))
-
     # Number of coils is uniform across all samples, so we can stack them
-    ir_kspace = torch.stack([s.ir_kspace for s in samples])
-    pd_kspace = torch.stack([s.pd_kspace for s in samples])
-    mask = torch.stack([s.mask for s in samples])
-    sens_maps = torch.stack([s.sens_maps for s in samples])
-    target = torch.stack([s.target for s in samples])
-    mins = torch.stack([s.min_target for s in samples])
-    maxs = torch.stack([s.max_target for s in samples])
+    ir_kspace = torch.stack([s.ir_kspace for s in batch])
+    pd_kspace = torch.stack([s.pd_kspace for s in batch])
+    mask = torch.stack([s.mask for s in batch])
+    sens_maps = torch.stack([s.sens_maps for s in batch])
+    target = torch.stack([s.target for s in batch])
+    mins = torch.stack([s.min_target for s in batch])
+    maxs = torch.stack([s.max_target for s in batch])
     return PSIRNetSample(
         ir_kspace, pd_kspace, mask, 
         sens_maps, target, mins, maxs
