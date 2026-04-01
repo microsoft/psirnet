@@ -12,6 +12,7 @@ class PSIRNetDataModule(L.LightningDataModule):
         train_batch_size: int = 8,
         val_batch_size: int = 8,
         test_batch_size: int = 8,
+        num_workers: int = 4,
     ):
         super().__init__()
         self.train_csv = train_csv
@@ -20,6 +21,7 @@ class PSIRNetDataModule(L.LightningDataModule):
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
         self.test_batch_size = test_batch_size
+        self.num_workers = num_workers
         self.transform = PSIRNetDataTransform()
 
     def setup(self, stage=None):
@@ -41,9 +43,9 @@ class PSIRNetDataModule(L.LightningDataModule):
             self.train_dataset,
             batch_size=self.train_batch_size,
             shuffle=True,
-            num_workers=0,  # Keep 0 for parallel_collate_fn
+            num_workers=self.num_workers,
             pin_memory=True,
-            collate_fn=parallel_collate_fn,
+            collate_fn=collate_fn,
             drop_last=True,  # Drop last incomplete batch
         )
 
@@ -52,9 +54,9 @@ class PSIRNetDataModule(L.LightningDataModule):
             self.val_dataset,
             batch_size=self.val_batch_size,
             shuffle=False,
-            num_workers=0,
+            num_workers=self.num_workers,
             pin_memory=True,
-            collate_fn=parallel_collate_fn,
+            collate_fn=collate_fn,
         )
 
     def test_dataloader(self):
@@ -62,7 +64,7 @@ class PSIRNetDataModule(L.LightningDataModule):
             self.test_dataset,
             batch_size=self.test_batch_size,
             shuffle=False,
-            num_workers=0,
+            num_workers=self.num_workers,
             pin_memory=True,
-            collate_fn=parallel_collate_fn,
+            collate_fn=collate_fn,
         )
