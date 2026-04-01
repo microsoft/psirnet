@@ -10,9 +10,7 @@ from torch.optim import Adam, AdamW
 from omegaconf import OmegaConf
 from typing import Optional
 from src.models import PSIRNet
-from src.loss import (
-    GSSIMLoss, SSIMLoss, EASSIMLoss, EAL1Loss, MS_SSIM_L1Loss, ValMetrics
-)
+from src.loss import SSIMLoss, ValMetrics
 from src.pl_data_module import PSIRNetDataModule
 
 
@@ -102,7 +100,6 @@ class PSIRNetLightning(L.LightningModule):
         sens_chans: int = 18,
         chans: int = 32,
         loss_function: str = 'ssim',
-        edge_weight: Optional[float] = None,
         learning_rate: float = 3e-4,
         lr_gamma: float = 0.99,
         warmup_epochs: int = 5,
@@ -121,32 +118,10 @@ class PSIRNetLightning(L.LightningModule):
         )
         if loss_function == 'ssim':
             self.loss_fn = SSIMLoss()
-        elif loss_function == 'msssiml1':
-            self.loss_fn = MS_SSIM_L1Loss()
-        elif loss_function == 'gssim':
-            self.loss_fn = GSSIMLoss()
         elif loss_function == 'l1':
             l1_loss = torch.nn.L1Loss()
             self.loss_fn = lambda pred, target, min_target=None, \
                 max_target=None: l1_loss(pred, target)
-        elif loss_function == 'eassim':
-            assert edge_weight is not None, (
-                "Edge weight must be provided for EASSIMLoss."
-            )
-            if edge_weight <= 0:
-                raise ValueError("Edge weight must be positive.")
-            self.loss_fn = EASSIMLoss(
-                edge_weight=edge_weight  # type: ignore
-            )
-        elif loss_function == 'eal1':
-            assert edge_weight is not None, (
-                "Edge weight must be provided for EASSIMLoss."
-            )
-            if edge_weight <= 0:
-                raise ValueError("Edge weight must be positive.")
-            self.loss_fn = EAL1Loss(
-                edge_weight=edge_weight  # type: ignore
-            )
         else:
             raise ValueError(
                 f"Unsupported loss function: {loss_function}."
@@ -173,31 +148,12 @@ class PSIRNetLightning(L.LightningModule):
         max_target = batch.max_target
 
         pred = self(ir_masked_kspace, pd_masked_kspace, mask, sens_maps)
-        loss_output = self.loss_fn(pred, target, min_target, max_target)
-        if isinstance(loss_output, tuple):  # EASSIMLoss or EAL1Loss
-            loss, main_loss, edge_loss = loss_output
-            self.log(
-                'train_loss', loss, on_step=True,
-                on_epoch=True, prog_bar=True,
-                sync_dist=True, batch_size=target.shape[0]
-            )
-            self.log(
-                'train_main_loss', main_loss, on_step=True,
-                on_epoch=True, prog_bar=True,
-                sync_dist=True, batch_size=target.shape[0]
-            )
-            self.log(
-                'train_edge_loss', edge_loss, on_step=True,
-                on_epoch=True, prog_bar=True,
-                sync_dist=True, batch_size=target.shape[0]
-            )
-        else:
-            loss = loss_output
-            self.log(
-                'train_loss', loss, on_step=True,
-                on_epoch=True, prog_bar=True,
-                sync_dist=True, batch_size=target.shape[0]
-            )
+        loss = self.loss_fn(pred, target, min_target, max_target)
+        self.log(
+            'train_loss', loss, on_step=True,
+            on_epoch=True, prog_bar=True,
+            sync_dist=True, batch_size=target.shape[0]
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -210,16 +166,11 @@ class PSIRNetLightning(L.LightningModule):
         max_target = batch.max_target
 
         pred = self(ir_masked_kspace, pd_masked_kspace, mask, sens_maps)
-        batch_ssim, batch_gssim, batch_l1, batch_edge = self.debug_fn(
+        batch_ssim, batch_l1, batch_edge = self.debug_fn(
             pred, target, min_target, max_target
         )
         self.log(
             'val_ssim', batch_ssim, on_step=False,
-            on_epoch=True, prog_bar=True,
-            sync_dist=True, batch_size=target.shape[0]
-        )
-        self.log(
-            'val_gssim', batch_gssim, on_step=False,
             on_epoch=True, prog_bar=True,
             sync_dist=True, batch_size=target.shape[0]
         )
@@ -244,16 +195,11 @@ class PSIRNetLightning(L.LightningModule):
         max_target = batch.max_target
 
         pred = self(ir_masked_kspace, pd_masked_kspace, mask, sens_maps)
-        batch_ssim, batch_gssim, batch_l1, batch_edge = self.debug_fn(
+        batch_ssim, batch_l1, batch_edge = self.debug_fn(
             pred, target, min_target, max_target
         )
         self.log(
             'test_ssim', batch_ssim, on_step=False,
-            on_epoch=True, prog_bar=True,
-            sync_dist=True, batch_size=target.shape[0]
-        )
-        self.log(
-            'test_gssim', batch_gssim, on_step=False,
             on_epoch=True, prog_bar=True,
             sync_dist=True, batch_size=target.shape[0]
         )
@@ -360,7 +306,6 @@ def main():
         sens_chans=config.model.sens_chans,
         chans=config.model.chans,
         loss_function=config.training.loss_function,
-        edge_weight=config.training.get('edge_weight', None),
         learning_rate=config.optimization.learning_rate,
         lr_gamma=config.optimization.lr_gamma,
         warmup_epochs=config.optimization.warmup_epochs,
