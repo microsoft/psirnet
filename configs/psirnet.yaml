@@ -13,8 +13,11 @@ optimization:
 
 # Data configuration
 data:
+  train_csv: # Provide the training .csv path
+  val_csv: # Provide the validation .csv path
   train_batch_size: 8
   val_batch_size: 8
+  num_workers: 4
   
 # Training configuration
 training:
