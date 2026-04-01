@@ -34,7 +34,7 @@ class SliceDataset(torch.utils.data.Dataset):
         return len(self.csv)
 
     def __getitem__(self, idx: int) -> PSIRNetSample:
-        """Return NumPy arrays"""
+        """Load NumPy arrays and return PyTorch tensors"""
         row = self.csv.iloc[idx]
         with np.load(row['npz_path'], mmap_mode='r') as npz:
             ir_kspace = npz['ir_kspace']
