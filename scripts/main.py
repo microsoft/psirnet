@@ -348,8 +348,11 @@ def main():
         print(OmegaConf.to_yaml(config))
 
     data_module = PSIRNetDataModule(
+        train_csv=config.data.train_csv,
+        val_csv=config.data.val_csv,
         train_batch_size=config.data.train_batch_size,
         val_batch_size=config.data.val_batch_size,
+        num_workers=config.data.num_workers,
     )
 
     model = PSIRNetLightning(
