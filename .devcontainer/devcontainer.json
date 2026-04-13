@@ -1,0 +1,33 @@
+{
+    "name": "PSIRNet Dev Container",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus=all",
+        "--shm-size=128g"
+    ],
+    //"mounts": [
+    //    "source=/path/to/data,target=/data/lge,type=bind"
+    //],
+    "containerEnv": {
+        "PYTHONPATH": "/workspaces/PSIRNet/src"
+    },
+    "postCreateCommand": "pip install -e .",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.flake8"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/bin/python3",
+                "python.formatting.provider": "black",
+                "python.linting.flake8Enabled": true
+            }
+        }
+    },
+    "remoteUser": "root"
+}
